@@ -489,10 +489,13 @@ struct Panel: View {
     @StateObject private var preview = Preview()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        ScrollView {
+        VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Osmo Pocket 3").font(.headline)
+                    Text("GimbalBar").font(.title3.weight(.semibold))
+                    Text("DJI Osmo Pocket 3")
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack(spacing: 5) {
                         Circle().fill(g.connected ? .green : .secondary).frame(width: 6, height: 6)
                         Text(g.connected ? "Connected" : "Not connected")
@@ -508,6 +511,16 @@ struct Panel: View {
                 .foregroundStyle(.secondary)
             }
 
+            HStack {
+                Label("Live preview", systemImage: "video")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                if !g.connected {
+                    Image(systemName: "video.slash")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             ZStack {
                 Rectangle().fill(.black)
                 PreviewView(session: preview.session)
@@ -519,7 +532,15 @@ struct Panel: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
 
-            Pad(g: g)
+            HStack {
+                Label("Manual control", systemImage: "move")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                Text("Tap or drag")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+
+            Pad(g: g).disabled(!g.connected)
 
             HStack(spacing: 16) {
                 Grid(horizontalSpacing: 4, verticalSpacing: 4) {
@@ -557,12 +578,14 @@ struct Panel: View {
                         .controlSize(.small)
                 }
             }
+            .disabled(!g.connected)
 
             Divider()
 
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
-                    Text("Saved camera positions").font(.subheadline.weight(.medium))
+                    Label("Saved positions", systemImage: "bookmark")
+                        .font(.subheadline.weight(.medium))
                     Spacer()
                     if g.isTransitioning {
                         Button("Cancel move") { g.stopTransition() }
@@ -609,8 +632,39 @@ struct Panel: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Keyboard shortcuts", systemImage: "keyboard")
+                    .font(.subheadline.weight(.medium))
+
+                Toggle("Enable global shortcuts", isOn: $g.hotkeysEnabled)
+                    .toggleStyle(.switch)
+                    .onChange(of: g.hotkeysEnabled) { _ in
+                        g.hotkeyStatus = HotKeys.configure()
+                    }
+
+                Picker("Modifiers", selection: $g.hotkeyModifiers) {
+                    Text("⌃⌥").tag(0)
+                    Text("⌘⌥").tag(1)
+                    Text("⌃⇧").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .disabled(!g.hotkeysEnabled)
+                .onChange(of: g.hotkeyModifiers) { _ in
+                    g.hotkeyStatus = HotKeys.configure()
+                }
+
+                Text("\(g.shortcutPrefix) + arrows: move · C: center · 1–3: presets")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(g.hotkeyStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Divider()
+
             HStack {
-                Text("⌃⌥ ←↑↓→ move   ⌃⌥C center")
+                Text("Version 1.1 · Development build")
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
@@ -620,8 +674,13 @@ struct Panel: View {
             }
         }
         .padding(16)
-        .frame(width: 320)
-        .onAppear { preview.start() }
+        }
+        .frame(width: 336)
+        .frame(maxHeight: 670)
+        .onAppear {
+            preview.start()
+            g.hotkeyStatus = HotKeys.status
+        }
         .onDisappear { preview.stop() }
         .focusable()
         .focusEffectDisabled()
