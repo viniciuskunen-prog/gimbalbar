@@ -17,11 +17,32 @@ O resultado confirma **leitura real** do dispositivo. O suporte a `SET_CUR` é a
 
 Exposição, foco e balanço de branco não aparecem nos controles UVC anunciados. Não estamos simulando esses controles.
 
+## Ajuste de responsividade — feedback de 21/10/2026
+
+Na primeira versão do slider, a Pocket 3 aplicava zoom, porém havia atraso nos botões e divergência entre a posição mostrada e o zoom efetivamente aplicado, relatados pelo usuário com captura de tela.
+
+A revisão mantém duas grandezas distintas:
+
+- **Selecionado (valor acima do controle)**: pedido do usuário. Move imediatamente com o dedo/mouse.
+- **Câmera (valor abaixo do controle)**: último valor confirmado via `GET_CUR` da Pocket 3.
+- Durante o arraste, os pedidos USB são **agrupados em janelas de 160 ms**: somente o destino mais recente é mantido na fila, sem gerar escrita para cada pixel movimentado.
+- O botão `1×` aceita uma nova solicitação mesmo enquanto a anterior está em andamento.
+- A posição do slider não é corrigida por leituras iniciadas antes do ajuste. Depois de um período de estabilização de aproximadamente 1,2 s, passa a acompanhar novamente as leituras efetivas do dispositivo.
+- O driver usa os limites de zoom conferidos na conexão ao enviar `SET_CUR`, evitando repetir `GET_MIN` e `GET_MAX` para cada pequena alteração.
+
+**Atenção:** o número `Câmera:` representa a resposta UVC. Ela pode mudar antes ou depois da transição visual do sensor/ISP, e o firmware pode impor passos próprios. Não interpretar o valor selecionado como zoom efetivamente aplicado até a leitura confirmar.
+
+### Validar a revisão
+
+Após atualizar a branch e compilar localmente, arraste lentamente de 1× para 2× e observe se a prévia responde durante o arraste (não apenas ao soltar). Verifique se **Selecionado** e **Câmera** convergem depois de parar. Experimente o botão 1× enquanto a câmera ainda está aproximando. Confirme também funcionamento de pan/tilt e de P1–P3.
+
+Se ainda existir divergência persistente, registrar os dois valores em que ocorreu. Não integrar à versão instalada até esclarecer.
+
 ## Implementação experimental
 
 - `ptz.h` / `ptz.c`: métodos de consulta do zoom e envio de `SET_CUR` com 2 bytes little-endian, usando o Camera Terminal existente. Cada escrita só ocorre depois de reler `GET_MIN`/`GET_MAX` e validar os limites.
 - `GimbalBar.swift`: estado do zoom, consulta inicial, atualização periódica moderada via mesma fila serial USB do pan/tilt, slider no painel horizontal sem `ScrollView` e botão para retornar a 1×.
-- O slider envia o ajuste **somente quando é liberado**, não a cada passo do arraste; exibe status em caso de erro.
+- O slider é responsivo e envia comandos agrupados em intervalos de 160 ms durante o arraste; ao soltar, confirma o último alvo. A interface exibe o valor selecionado e o valor lido da câmera separadamente.
 - O controle permanece desabilitado até verificar os limites reais de 1×–4× da câmera. Uma desconexão desabilita o slider e provoca nova descoberta ao reconectar.
 - Versão do executável experimental: **1.2**; a instalação estável deve permanecer **1.1**.
 - Os atalhos globais existentes e as três posições salvas continuam preservados. O zoom **ainda não faz parte dos presets**.
@@ -66,7 +87,7 @@ Somente após validar podemos consolidar o zoom na `main`, reconstruir uma únic
 - [x] Controle SwiftUI e driver de zoom escritos em branch separada.
 - [ ] Compilação nativa do novo código no MacBook.
 - [ ] Primeiro comando `SET_CUR` validado fisicamente (1,2×).
-- [ ] Testes de zoom 2×, retorno 1×, reconexão e regressão.
+- [ ] Testes de zoom progressivo e responsividade, retorno 1×, reconexão e regressão.
 - [ ] Merge e atualização da instalação estável (somente após testes).
 
 Referência para o seletor de controle UVC: https://github.com/microsoft/Windows-driver-samples/blob/main/usb/usbview/uvcdesc.h
