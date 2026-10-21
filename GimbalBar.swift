@@ -110,6 +110,14 @@ struct PreviewView: NSViewRepresentable {
     func updateNSView(_ nsView: LayerView, context: Context) {}
 }
 
+// MARK: - Saved camera positions
+
+struct SavedPosition: Codable {
+    let slot: Int
+    let pan: Double
+    let tilt: Double
+}
+
 // MARK: - Gimbal controller
 
 @MainActor
@@ -120,11 +128,15 @@ final class Gimbal: ObservableObject {
     @Published var tilt = 0.0
     @Published var connected = false
     @Published var range = ptz_range_t(panMin: -35, panMax: 215, tiltMin: -90, tiltMax: 90)
+    @Published private(set) var savedPositions: [SavedPosition] = []
+    @Published private(set) var isTransitioning = false
 
     @AppStorage("step") var step = 15.0
     @AppStorage("invertPan") var invertPan = false
     @AppStorage("homePan") var homePan = 180.0
     @AppStorage("homeTilt") var homeTilt = 0.0
+    // Degrees per 200 ms software step. This is not a hardware motor-speed setting.
+    @AppStorage("presetMotionStep") var presetMotionStep = 6.0
 
     private let usb = DispatchQueue(label: "gimbal.usb")
     private var pending: (Double, Double)?
@@ -133,8 +145,15 @@ final class Gimbal: ObservableObject {
     private var moveRevision: UInt64 = 0
     private var rangeAttempted = false
     private var timer: Timer?
+    private var transitionTimer: Timer?
+    private var transitionDestination: (pan: Double, tilt: Double)?
+    private let positionsKey = "ov.gimbalbar.savedPositions.v1"
 
     init() {
+        if let data = UserDefaults.standard.data(forKey: positionsKey),
+           let positions = try? JSONDecoder().decode([SavedPosition].self, from: data) {
+            savedPositions = positions.filter { (1...3).contains($0.slot) }
+        }
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
             Task { @MainActor in self.refresh() }
@@ -159,20 +178,27 @@ final class Gimbal: ObservableObject {
                     if probeRange { self.rangeAttempted = true }
                     if gotRange { self.range = discoveredRange }
                     // Ignore a stale read that began before a user movement.
-                    if !self.sending && self.moveRevision == revision {
+                    if !self.sending && !self.isTransitioning && self.moveRevision == revision {
                         self.pan = p
                         self.tilt = t
                     }
                 } else {
                     // Re-read device limits the next time the camera comes back.
                     self.rangeAttempted = false
+                    self.cancelTransition()
                 }
             }
         }
     }
 
-    // Latest target wins; USB writes never queue up behind a drag.
+    // Any manual move cancels the remaining preset trajectory.
     func go(pan: Double, tilt: Double) {
+        cancelTransition()
+        sendTarget(pan: pan, tilt: tilt)
+    }
+
+    // Latest target wins; never build a backlog of USB move commands.
+    private func sendTarget(pan: Double, tilt: Double) {
         guard connected else { return }
         let p = min(max(pan, range.panMin), range.panMax)
         let t = min(max(tilt, range.tiltMin), range.tiltMax)
@@ -183,6 +209,75 @@ final class Gimbal: ObservableObject {
         guard !sending else { return }
         sending = true
         flush()
+    }
+
+    func savedPosition(slot: Int) -> SavedPosition? {
+        savedPositions.first { $0.slot == slot }
+    }
+
+    func savePosition(slot: Int) {
+        guard connected, !sending, !isTransitioning, (1...3).contains(slot) else { return }
+        let position = SavedPosition(slot: slot, pan: pan, tilt: tilt)
+        savedPositions.removeAll { $0.slot == slot }
+        savedPositions.append(position)
+        savedPositions.sort { $0.slot < $1.slot }
+        if let data = try? JSONEncoder().encode(savedPositions) {
+            UserDefaults.standard.set(data, forKey: positionsKey)
+        }
+    }
+
+    func recallPosition(slot: Int) {
+        guard let saved = savedPosition(slot: slot) else { return }
+        moveSmoothly(pan: saved.pan, tilt: saved.tilt)
+    }
+
+    // UVC exposes absolute positions, not a reliable motor-speed interface.
+    // Interpolate conservative 200 ms position steps, clamped to device limits.
+    func moveSmoothly(pan: Double, tilt: Double) {
+        guard connected else { return }
+        cancelTransition()
+        transitionDestination = (
+            pan: min(max(pan, range.panMin), range.panMax),
+            tilt: min(max(tilt, range.tiltMin), range.tiltMax)
+        )
+        isTransitioning = true
+        advanceTransition()
+        if isTransitioning {
+            transitionTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.advanceTransition() }
+            }
+        }
+    }
+
+    private func advanceTransition() {
+        guard connected, let target = transitionDestination else {
+            cancelTransition()
+            return
+        }
+        let dx = target.pan - pan
+        let dy = target.tilt - tilt
+        let remaining = hypot(dx, dy)
+        if remaining < 0.01 {
+            cancelTransition()
+            return
+        }
+        let step = min(max(presetMotionStep, 1.0), 9.0)
+        let fraction = min(1.0, step / remaining)
+        sendTarget(pan: pan + dx * fraction, tilt: tilt + dy * fraction)
+        if fraction >= 1.0 { cancelTransition() }
+    }
+
+    private func cancelTransition() {
+        transitionTimer?.invalidate()
+        transitionTimer = nil
+        transitionDestination = nil
+        isTransitioning = false
+    }
+
+    func stopTransition() {
+        cancelTransition()
+        // The in-flight USB request cannot be retracted; no further steps are queued.
+        pending = nil
     }
 
     private func flush() {
@@ -197,6 +292,7 @@ final class Gimbal: ObservableObject {
                     self.pending = nil
                     self.sending = false
                     self.rangeAttempted = false
+                    self.cancelTransition()
                     return
                 }
                 self.flush()
@@ -209,7 +305,7 @@ final class Gimbal: ObservableObject {
         go(pan: pan + dx * step * sign, tilt: tilt + dy * step)
     }
 
-    func recenter() { go(pan: homePan, tilt: homeTilt) }
+    func recenter() { moveSmoothly(pan: homePan, tilt: homeTilt) }
 
     func setHome() {
         homePan = pan
@@ -388,6 +484,55 @@ struct Panel: View {
                         .toggleStyle(.checkbox)
                         .controlSize(.small)
                 }
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Text("Saved camera positions").font(.subheadline.weight(.medium))
+                    Spacer()
+                    if g.isTransitioning {
+                        Button("Cancel move") { g.stopTransition() }
+                            .controlSize(.small)
+                    }
+                }
+
+                ForEach(1...3, id: \.self) { slot in
+                    let saved = g.savedPosition(slot: slot)
+                    HStack(spacing: 8) {
+                        Text("P\(slot)")
+                            .font(.system(.caption, design: .rounded).weight(.semibold))
+                            .frame(width: 24, alignment: .leading)
+                        if let saved {
+                            Text("\(Int(saved.pan.rounded()))° / \(Int(saved.tilt.rounded()))°")
+                                .foregroundStyle(.secondary)
+                                .font(.caption.monospacedDigit())
+                        } else {
+                            Text("Empty").foregroundStyle(.tertiary).font(.caption)
+                        }
+                        Spacer(minLength: 4)
+                        Button("Save") { g.savePosition(slot: slot) }
+                            .disabled(!g.connected || g.isTransitioning)
+                            .controlSize(.small)
+                        Button("Go") { g.recallPosition(slot: slot) }
+                            .disabled(!g.connected || saved == nil)
+                            .controlSize(.small)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Text("Move style").font(.caption).foregroundStyle(.secondary)
+                    Picker("Move style", selection: $g.presetMotionStep) {
+                        Text("Gentle").tag(3.0)
+                        Text("Normal").tag(6.0)
+                        Text("Quick").tag(9.0)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                Text("Interpolated steps, not hardware motor speed")
+                    .font(.caption2).foregroundStyle(.tertiary)
             }
 
             Divider()
