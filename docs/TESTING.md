@@ -1,75 +1,77 @@
-# GimbalBar — local build and hardware validation
+# GimbalBar 1.1 — instalação e validação
 
-This repository is a public MIT-licensed fork of https://github.com/amirmxt/gimbalbar. Development preserves upstream credits and history.
+Projeto derivado do GimbalBar original de https://github.com/amirmxt/gimbalbar. Histórico e licença MIT preservados. Compilação e testes devem ser realizados localmente para economizar GitHub Actions.
 
-## Hardware and tooling
+## Requisitos
 
-- Apple Silicon Mac, macOS 14 or later
+- Mac Apple Silicon com macOS 14 ou posterior
 - Xcode Command Line Tools
-- DJI Osmo Pocket 3 via USB-C, with **Webcam** mode selected
-- Camera access permission granted to the app
+- DJI Osmo Pocket 3 conectada por USB-C e configurada em **Webcam**
+- Permissão de câmera para o GimbalBar no macOS
 
-## Test the 1.1 candidate without replacing the installed 1.0
+## Recursos disponíveis
 
-```bash
-cd ~/Projects/gimbalbar
-git fetch origin
-git switch --track origin/feat/v1.1-presets-smooth-motion
-./build.sh && open ./GimbalBar.app
-```
+- Prévia ao vivo e controle USB do gimbal
+- Reconexão automática da câmera
+- Interface horizontal em português brasileiro, com duas colunas e **sem rolagem**
+- Três posições persistentes (P1, P2, P3) e recuperação com movimento em etapas
+- Movimento por software em ritmos **Suave**, **Normal** e **Rápida**
+- Atalhos globais habilitáveis e três perfis de modificadores (⌃⌥, ⌘⌥, ⌃⇧), com setas, C e teclas 1–3
+- Interromper movimento iniciado por preset; operação manual cancela a trajetória programada
 
-If the development branch is already on disk, switch with `git switch feat/v1.1-presets-smooth-motion` and run `git pull --ff-only` before building.
+A movimentação suave é implementada enviando pequenas posições absolutas, não por ajuste direto da velocidade do motor. A câmera pode continuar completando um comando já recebido mesmo após interromper o envio de novas etapas. Não constitui parada de emergência.
 
-**Keep the existing /Applications/GimbalBar.app unchanged** until tests are complete. The script removes and recreates only the project's own `build/` and `GimbalBar.app/`, then ad-hoc signs the local build. It does not install the application system-wide. Do not consume GitHub Actions minutes for this local hardware validation.
+## Instalar a compilação consolidada
 
-## GimbalBar 1.1 — test matrix
-
-1. **Baseline:** Open and confirm live preview, connected indicator, normal drag pad, arrow nudge and Home.
-2. **Save:** With the Pocket 3 connected and still, set a low-risk framing and select **Save** for P1. Move to a second framing and save P2. Optionally save P3. The coordinates shown beside each saved position should update.
-3. **Recall:** Move away from P1 and select **Go** for P1. The camera should move through successive small steps toward the saved position rather than receiving a single far target. Test P2.
-4. **Motion style:** Select Gentle, Normal, and Quick. Verify that the software step size changes. This is *not* hardware motor-speed control and cannot guarantee a precise physical duration.
-5. **Cancel:** While returning to a distant saved position, press **Cancel move**. Future software steps should stop. An already-sent USB command may continue until completed by the camera. This is not an emergency motor stop.
-6. **Manual override:** Start a preset recall, then drag the pad or use an arrow. The preset trajectory should cancel immediately and the manual movement should take precedence.
-7. **Persistence:** Quit and relaunch the development app. P1/P2/P3 and selected motion style should persist.
-8. **Disconnect:** During a move, unplug USB. Automatic trajectory generation should stop. After reconnecting in Webcam mode, the preview/control should return and saved positions remain.
-9. **No camera:** With USB unplugged, no preset recall should start, nor should Save accept a new camera position.
-10. **Regression:** Check invert pan, saved center, recenter, and global shortcuts Control-Option + arrows / C.
-
-For physical safety, use **Gentle** first, keep the gimbal clear of obstacles, and avoid unattended operation. The device's physical motion may lag software commands. Stop testing if it behaves unpredictably.
-
-## GimbalBar 1.1 — UI and configurable shortcuts
-
-A interface horizontal (sem rolagem), sua tradução para pt-BR e os perfis de atalhos são desenvolvidos na branch `feat/v1.1-ui-shortcut-profiles`, based on the unmerged 1.1 presets branch. This is a **stacked change**, not yet part of `main`.
-
-To test this branch after the presets build:
+Após as PRs #2 e #3 serem integradas à `main`, feche o GimbalBar e execute:
 
 ```bash
 cd ~/Projects/gimbalbar
-git fetch origin
-git switch --track origin/feat/v1.1-ui-shortcut-profiles
-./build.sh && open ./GimbalBar.app
+git switch main
+git pull --ff-only
+./build.sh
 ```
 
-Quit **all other running copies** of GimbalBar first, including `/Applications/GimbalBar.app`, so global hotkey registration cannot conflict with a second instance.
+**Continue apenas se aparecer `Built .../GimbalBar.app` e não houver erro.**
 
-Shortcut test matrix:
+```bash
+pkill -x GimbalBar 2>/dev/null || true
+backup="$HOME/Desktop/GimbalBar-backup-antes-1.1.app"
+if [ -d /Applications/GimbalBar.app ] && [ ! -e "$backup" ]; then
+  ditto /Applications/GimbalBar.app "$backup"
+fi
+ditto ./GimbalBar.app /Applications/GimbalBar.app
+open /Applications/GimbalBar.app
+```
 
-1. **Layout horizontal, sem rolagem:** o menu deve exibir simultaneamente prévia e controle manual na coluna esquerda, posições salvas e atalhos na direita, sem `ScrollView` nem barra de rolagem. Validar os controles e o botão **Sair** no tamanho atual da tela.
-2. **Idioma:** títulos, botões, mensagens de status e perfis devem aparecer em português do Brasil. A marca GimbalBar e o nome DJI Osmo Pocket 3 permanecem inalterados.
-3. **Atalhos padrão:** With global shortcuts enabled, `Control+Option+arrows` should move; `Control+Option+C` should center; `Control+Option+1/2/3` should recall saved presets.
-4. **Alterar combinação:** Select `Command+Option` and verify its arrows/C/1–3. Confirm the old modifier no longer operates the camera.
-5. **Terceiro perfil:** Select `Control+Shift` and retest one arrow and one saved preset.
-6. **Desativar:** Turn off global shortcuts. The counter should show disabled, and global shortcuts must no longer move the camera.
-7. **Reativar:** Turn global shortcuts on and confirm immediate re-registration without restarting.
-8. **Conflitos:** If macOS or another application reserves a shortcut, the app reports the number of successfully registered shortcuts. Change profile; do not disable macOS security or Accessibility protection.
-9. **Persistência:** Quit and relaunch. Enabled state and selected modifier profile must persist.
-10. **Regressão:** Saved positions, cancel motion, USB disconnect/reconnect, step size, invert pan and live preview should still function.
+Isso preserva um backup único da versão anterior na Mesa e substitui o aplicativo instalado somente depois da compilação bem-sucedida. O identificador do aplicativo foi mantido, preservando as preferências locais.
 
-**Risk:** Shortcut registration is attempted for 8 keys per modifier profile and may partially fail when the OS or another app owns a combination. A failed registration does not grant permission to override the OS shortcut.
+## Testes essenciais da versão 1.1
 
-## SwiftUI build troubleshooting
+1. Confirmar que o painel horizontal aparece inteiro, sem barra de rolagem, em português.
+2. Validar prévia, movimentação pelo pad e setas, inversão horizontal e centralização.
+3. Salvar P1, P2 e P3; retornar a cada uma e conferir persistência após fechar/reabrir.
+4. Testar movimentos Suave, Normal e Rápida e o comando **Interromper**.
+5. Durante um retorno a posição salva, movimentar manualmente e verificar cancelamento da trajetória programada.
+6. Ativar/desativar atalhos, alternar perfis ⌃⌥ / ⌘⌥ / ⌃⇧ e recuperar P1–P3.
+7. Desconectar/reconectar a Pocket 3 em Webcam e conferir retomada da prévia e controles.
+8. Confirmar que a ausência da câmera não executa movimentos de gimbal.
 
-Earlier MacBook tests reported `SwiftUIMacros.StateMacro` missing from the Command Line Tools toolchain. The code already uses `@StoredState` as an alias for `SwiftUI.State`, avoiding direct macro expansion for the drag property. If compilation fails again, capture:
+**Segurança:** manter motores desobstruídos, iniciar com ritmo Suave e evitar movimentos sem supervisão.
+
+## Histórico de validação — 21/10/2026
+
+- Versão 1.0: compilação local e controles USB funcionando; reconexão validada pelo usuário.
+- Versão 1.1, PR #2: usuário confirmou que a versão experimental funcionou.
+- Versão 1.1, PR #3: a primeira tentativa de layout com `ScrollView` ficou praticamente invisível. Foi substituída por um painel horizontal de largura e altura fixas, sem rolagem, traduzido para português.
+- Usuário aprovou o novo layout e posteriormente confirmou: **"Tudo ok"**, em resposta à solicitação de validação funcional de atalhos, cancelamento e reconexão.
+- Confirmação de compilação/instalação do executável **consolidado da `main`** ainda é necessária; o teste anterior foi feito na branch experimental, antes da atualização dos metadados da versão.
+
+## Diagnóstico do compilador
+
+Uma versão anterior falhou com `SwiftUIMacros.StateMacro` não encontrado nas Command Line Tools. O ajuste `@StoredState` contornou essa incompatibilidade no MacBook testado.
+
+Em caso de erro no build:
 
 ```bash
 xcode-select -p
@@ -77,14 +79,8 @@ xcrun --find swiftc
 swiftc --version
 ```
 
-A successful build explicitly prints `Built .../GimbalBar.app`. If it does not, do not run the incomplete app. Related precedent: https://github.com/drumih/turbo-fieldfare/issues/185
+Referência do problema: https://github.com/drumih/turbo-fieldfare/issues/185
 
-## Validation status
+## Política de integração
 
-- 1.0 reliability fixes: **compiled and tested successfully** on the user's Apple Silicon MacBook on October 21, 2026. USB webcam operation, installation, and unplug/replug recovery confirmed.
-- 1.1 candidate: **source changes committed, no Mac compilation or physical test yet**. Keep the 1.1 PR unmerged until the test matrix passes.
-- CI / GitHub Actions: **not run**.
-
-## Release gate
-
-Only after build and physical tests pass: merge the 1.1 PR, sync local `main`, rebuild, quit existing GimbalBar and install the tested build into `/Applications`. Update the app version after validation and before release. Document failures and local toolchain versions in the PR.
+Desenvolvimento em branches, PRs de revisão e testes de hardware locais. Não habilitar automações de CI custosas apenas para reproduzir testes que exigem a câmera.
