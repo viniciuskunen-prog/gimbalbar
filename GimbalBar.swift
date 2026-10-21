@@ -2,6 +2,10 @@ import SwiftUI
 import AVFoundation
 import Carbon.HIToolbox
 
+// Avoid Swift 6.4 @State macro expansion: Command Line Tools may lack SwiftUIMacros.
+// This alias retains Apple's SwiftUI.State property-wrapper behavior.
+private typealias StoredState<Value> = SwiftUI.State<Value>
+
 // MARK: - Live preview
 
 final class Preview: ObservableObject {
@@ -253,7 +257,7 @@ enum HotKeys {
 
 struct Pad: View {
     @ObservedObject var g: Gimbal
-    @State private var dragging = false
+    @StoredState private var dragging = false
 
     var body: some View {
         GeometryReader { geo in
