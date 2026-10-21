@@ -784,18 +784,28 @@ struct Panel: View {
                         }
 
                         HStack(spacing: 9) {
-                            Slider(value: $g.zoom, in: g.zoomMin...g.zoomMax, step: 0.1,
+                            Slider(value: Binding(
+                                get: { g.zoom },
+                                set: { g.selectZoom($0) }
+                            ), in: g.zoomMin...g.zoomMax, step: 0.1,
                                    onEditingChanged: { editing in
                                 g.zoomEditingChanged(editing)
                             })
-                            .disabled(!g.connected || !g.zoomAvailable || g.zoomStatus == "Aplicando zoom…")
+                            .disabled(!g.connected || !g.zoomAvailable)
                             Button("1×") { g.setZoom(g.zoomMin) }
-                                .disabled(!g.connected || !g.zoomAvailable || g.zoomStatus == "Aplicando zoom…")
+                                .disabled(!g.connected || !g.zoomAvailable)
                                 .controlSize(.small)
                         }
-                        Text(g.zoomStatus.isEmpty ? "Solte o controle para aplicar na Pocket 3" : g.zoomStatus)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(String(format: "Câmera: %.1f×", g.zoomActual))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                            Text(g.zoomStatus)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     Divider()
                     VStack(alignment: .leading, spacing: 10) {
