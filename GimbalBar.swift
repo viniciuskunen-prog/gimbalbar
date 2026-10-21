@@ -675,8 +675,9 @@ struct Panel: View {
         }
         .padding(16)
         }
-        .frame(width: 336)
-        .frame(maxHeight: 670)
+        // MenuBarExtra(.window) needs an explicit viewport height for ScrollView.
+        // A maxHeight-only constraint can collapse the popover to a scroll indicator.
+        .frame(width: 336, height: 600)
         .onAppear {
             preview.start()
             g.hotkeyStatus = HotKeys.status
