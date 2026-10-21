@@ -1,4 +1,5 @@
 #include "ptz.h"
+#include <stdint.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOCFPlugIn.h>
