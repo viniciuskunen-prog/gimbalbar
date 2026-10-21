@@ -37,6 +37,36 @@ If the development branch is already on disk, switch with `git switch feat/v1.1-
 
 For physical safety, use **Gentle** first, keep the gimbal clear of obstacles, and avoid unattended operation. The device's physical motion may lag software commands. Stop testing if it behaves unpredictably.
 
+## GimbalBar 1.1 — UI and configurable shortcuts
+
+A interface horizontal (sem rolagem), sua tradução para pt-BR e os perfis de atalhos são desenvolvidos na branch `feat/v1.1-ui-shortcut-profiles`, based on the unmerged 1.1 presets branch. This is a **stacked change**, not yet part of `main`.
+
+To test this branch after the presets build:
+
+```bash
+cd ~/Projects/gimbalbar
+git fetch origin
+git switch --track origin/feat/v1.1-ui-shortcut-profiles
+./build.sh && open ./GimbalBar.app
+```
+
+Quit **all other running copies** of GimbalBar first, including `/Applications/GimbalBar.app`, so global hotkey registration cannot conflict with a second instance.
+
+Shortcut test matrix:
+
+1. **Layout horizontal, sem rolagem:** o menu deve exibir simultaneamente prévia e controle manual na coluna esquerda, posições salvas e atalhos na direita, sem `ScrollView` nem barra de rolagem. Validar os controles e o botão **Sair** no tamanho atual da tela.
+2. **Idioma:** títulos, botões, mensagens de status e perfis devem aparecer em português do Brasil. A marca GimbalBar e o nome DJI Osmo Pocket 3 permanecem inalterados.
+3. **Atalhos padrão:** With global shortcuts enabled, `Control+Option+arrows` should move; `Control+Option+C` should center; `Control+Option+1/2/3` should recall saved presets.
+4. **Alterar combinação:** Select `Command+Option` and verify its arrows/C/1–3. Confirm the old modifier no longer operates the camera.
+5. **Terceiro perfil:** Select `Control+Shift` and retest one arrow and one saved preset.
+6. **Desativar:** Turn off global shortcuts. The counter should show disabled, and global shortcuts must no longer move the camera.
+7. **Reativar:** Turn global shortcuts on and confirm immediate re-registration without restarting.
+8. **Conflitos:** If macOS or another application reserves a shortcut, the app reports the number of successfully registered shortcuts. Change profile; do not disable macOS security or Accessibility protection.
+9. **Persistência:** Quit and relaunch. Enabled state and selected modifier profile must persist.
+10. **Regressão:** Saved positions, cancel motion, USB disconnect/reconnect, step size, invert pan and live preview should still function.
+
+**Risk:** Shortcut registration is attempted for 8 keys per modifier profile and may partially fail when the OS or another app owns a combination. A failed registration does not grant permission to override the OS shortcut.
+
 ## SwiftUI build troubleshooting
 
 Earlier MacBook tests reported `SwiftUIMacros.StateMacro` missing from the Command Line Tools toolchain. The code already uses `@StoredState` as an alias for `SwiftUI.State`, avoiding direct macro expansion for the drag property. If compilation fails again, capture:
