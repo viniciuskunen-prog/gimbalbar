@@ -130,7 +130,9 @@ final class Gimbal: ObservableObject {
     @Published var range = ptz_range_t(panMin: -35, panMax: 215, tiltMin: -90, tiltMax: 90)
     @Published private(set) var savedPositions: [SavedPosition] = []
     @Published private(set) var isTransitioning = false
+    // zoom é o alvo selecionado no controle; zoomActual é o último valor lido da câmera.
     @Published var zoom = 1.0
+    @Published private(set) var zoomActual = 1.0
     @Published private(set) var zoomMin = 1.0
     @Published private(set) var zoomMax = 4.0
     @Published private(set) var zoomAvailable = false
@@ -164,6 +166,10 @@ final class Gimbal: ObservableObject {
     private var zoomPollingTicks = 0
     private var zoomEditing = false
     private var zoomSending = false
+    private var zoomPending: Int32?
+    private var zoomCommitTimer: Timer?
+    private var zoomRevision: UInt64 = 0
+    private var zoomSettlingUntil = Date.distantPast
     private var timer: Timer?
     private var transitionTimer: Timer?
     private var transitionDestination: (pan: Double, tilt: Double)?
@@ -188,8 +194,9 @@ final class Gimbal: ObservableObject {
         let probeRange = !rangeAttempted
         let probeZoom = !zoomRangeAttempted
         zoomPollingTicks += 1
-        let readZoom = probeZoom || zoomPollingTicks >= 3
+        let readZoom = probeZoom || zoomPollingTicks >= 2
         if readZoom { zoomPollingTicks = 0 }
+        let zoomReadRevision = zoomRevision
         usb.async {
             var p = 0.0, t = 0.0
             let ok = ptz_get(&p, &t) == 0
@@ -219,10 +226,20 @@ final class Gimbal: ObservableObject {
                             self.zoomStatus = "Zoom nativo indisponível via USB"
                         }
                     }
-                    // While dragging or writing, don't overwrite the user's selected zoom.
+                    // Exibir a leitura real separadamente. Leituras iniciadas antes de
+                    // um novo comando nunca devem empurrar a posição do controle.
                     if gotZoomCurrent && self.zoomAvailable &&
-                        !self.zoomEditing && !self.zoomSending {
-                        self.zoom = min(max(Double(zCurrent) / 100.0, self.zoomMin), self.zoomMax)
+                        self.zoomRevision == zoomReadRevision && !self.zoomSending {
+                        let measured = min(max(Double(zCurrent) / 100.0,
+                                               self.zoomMin), self.zoomMax)
+                        self.zoomActual = measured
+                        if !self.zoomEditing && self.zoomPending == nil &&
+                           Date() >= self.zoomSettlingUntil {
+                            // Somente um valor lido depois da estabilização move
+                            // o slider; assim ele espelha a posição real informada.
+                            self.zoom = measured
+                            self.zoomStatus = ""
+                        }
                     }
                     // Ignore stale PTZ reads invalidated by a user movement.
                     if !self.sending && !self.isTransitioning &&
@@ -236,6 +253,10 @@ final class Gimbal: ObservableObject {
                     self.zoomRangeAttempted = false
                     self.zoomAvailable = false
                     self.zoomEditing = false
+                    self.zoomPending = nil
+                    self.zoomCommitTimer?.invalidate()
+                    self.zoomCommitTimer = nil
+                    self.zoomRevision &+= 1
                     self.zoomStatus = "Conecte a Pocket 3"
                     self.cancelTransition()
                 }
@@ -243,42 +264,76 @@ final class Gimbal: ObservableObject {
         }
     }
 
-    // Zoom is applied once when the user releases the slider. No USB write
-    // occurs while they are dragging or before the hardware range is known.
+    // Os comandos são agrupados: no máximo uma escrita por janela de 160 ms.
+    // A seleção continua responsiva durante escritas USB; o último alvo vence.
+    func selectZoom(_ requested: Double) {
+        guard connected && zoomAvailable else { return }
+        let clamped = min(max(requested, zoomMin), zoomMax)
+        let target = (clamped * 10.0).rounded() / 10.0
+        zoom = target
+        zoomPending = Int32((target * 100.0).rounded())
+        zoomRevision &+= 1
+        zoomStatus = "Ajustando zoom…"
+        scheduleZoomCommit()
+    }
+
     func zoomEditingChanged(_ editing: Bool) {
-        if editing {
-            zoomEditing = true
-            return
+        zoomEditing = editing
+        if !editing {
+            // Enviar a última posição assim que o usuário soltar.
+            zoomCommitTimer?.invalidate()
+            zoomCommitTimer = nil
+            sendPendingZoom()
         }
-        guard zoomEditing else { return }
-        zoomEditing = false
-        setZoom(zoom)
     }
 
     func setZoom(_ requested: Double) {
-        guard connected && zoomAvailable && !zoomSending else { return }
-        let clamped = min(max(requested, zoomMin), zoomMax)
-        let raw = Int32((clamped * 100.0).rounded())
+        // Mesmo caminho do slider: botão 1× pode interromper uma escrita lenta
+        // e enfileira somente o novo alvo, sem bloquear a interface.
+        selectZoom(requested)
+        zoomCommitTimer?.invalidate()
+        zoomCommitTimer = nil
+        sendPendingZoom()
+    }
+
+    private func scheduleZoomCommit() {
+        guard zoomCommitTimer == nil && !zoomSending else { return }
+        zoomCommitTimer = Timer.scheduledTimer(withTimeInterval: 0.16,
+                                               repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.zoomCommitTimer = nil
+                self?.sendPendingZoom()
+            }
+        }
+    }
+
+    private func sendPendingZoom() {
+        guard connected && zoomAvailable && !zoomSending,
+              let target = zoomPending else { return }
+        zoomPending = nil
         zoomSending = true
-        zoomStatus = "Aplicando zoom…"
+        let verifiedMin = Int32((zoomMin * 100.0).rounded())
+        let verifiedMax = Int32((zoomMax * 100.0).rounded())
+
         usb.async {
-            // The C driver independently verifies GET_MIN/GET_MAX before SET_CUR.
-            let wrote = ptz_zoom_set(raw) == 0
-            var confirmed: Int32 = 0
-            let readBack = wrote && ptz_zoom_get(&confirmed) == 0
+            // Limites verificados na conexão e novamente validados no driver C.
+            // Evita dois GETs extras a cada pequena alteração.
+            let ok = ptz_zoom_set_checked(target, verifiedMin, verifiedMax) == 0
             Task { @MainActor in
                 self.zoomSending = false
-                if wrote {
-                    if readBack {
-                        self.zoom = min(max(Double(confirmed) / 100.0, self.zoomMin), self.zoomMax)
-                        self.zoomStatus = ""
-                    } else {
-                        self.zoomStatus = "Zoom enviado; leitura indisponível"
-                    }
-                } else {
-                    self.zoomStatus = "Falha ao aplicar zoom"
+                if !ok {
+                    self.zoomPending = nil
+                    self.zoomCommitTimer?.invalidate()
+                    self.zoomCommitTimer = nil
+                    self.zoomStatus = "Falha ao enviar zoom; reconecte a câmera"
                     self.zoomAvailable = false
                     self.zoomRangeAttempted = false
+                    return
+                }
+                self.zoomSettlingUntil = Date().addingTimeInterval(1.2)
+                self.zoomStatus = "Aguardando confirmação da câmera…"
+                if self.zoomPending != nil {
+                    self.scheduleZoomCommit()
                 }
             }
         }
