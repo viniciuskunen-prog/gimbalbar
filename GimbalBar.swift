@@ -738,7 +738,7 @@ struct Panel: View {
                                 .disabled(!g.connected || !g.zoomAvailable || g.zoomStatus == "Aplicando zoom…")
                                 .controlSize(.small)
                         }
-                        Text(g.zoomAvailable ? "Solte o controle para aplicar na Pocket 3" : g.zoomStatus)
+                        Text(g.zoomStatus.isEmpty ? "Solte o controle para aplicar na Pocket 3" : g.zoomStatus)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
