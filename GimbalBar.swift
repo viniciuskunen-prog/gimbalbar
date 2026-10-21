@@ -749,7 +749,7 @@ struct Panel: View {
                     
                                     Toggle("Ativar atalhos globais", isOn: $g.hotkeysEnabled)
                                         .toggleStyle(.switch)
-                                        .onChange(of: g.hotkeysEnabled) { _ in
+                                        .onChange(of: g.hotkeysEnabled) {
                                             g.hotkeyStatus = HotKeys.configure()
                                         }
                     
@@ -760,7 +760,7 @@ struct Panel: View {
                                     }
                                     .pickerStyle(.segmented)
                                     .disabled(!g.hotkeysEnabled)
-                                    .onChange(of: g.hotkeyModifiers) { _ in
+                                    .onChange(of: g.hotkeyModifiers) {
                                         g.hotkeyStatus = HotKeys.configure()
                                     }
                     
