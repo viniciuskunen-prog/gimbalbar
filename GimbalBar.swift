@@ -10,7 +10,7 @@ private typealias StoredState<Value> = SwiftUI.State<Value>
 
 final class Preview: ObservableObject {
     let session = AVCaptureSession()
-    @Published var status = "Starting camera…"
+    @Published var status = "Iniciando câmera…"
     private let queue = DispatchQueue(label: "gimbal.preview")
     private var active = false
     private var authorized = false
@@ -38,7 +38,7 @@ final class Preview: ObservableObject {
                 guard self.active else { return }
                 self.authorized = granted
                 guard granted else {
-                    DispatchQueue.main.async { self.status = "Camera access denied in System Settings" }
+                    DispatchQueue.main.async { self.status = "Acesso à câmera negado. Verifique os Ajustes do Sistema." }
                     return
                 }
                 self.refreshDevice()
@@ -78,7 +78,7 @@ final class Preview: ObservableObject {
 
         if ready { session.startRunning() }
         DispatchQueue.main.async {
-            self.status = ready ? "" : (found == nil ? "Pocket 3 not found" : "Unable to open Pocket 3 camera")
+            self.status = ready ? "" : (found == nil ? "Pocket 3 não encontrada" : "Não foi possível abrir a câmera Pocket 3")
         }
     }
 }
@@ -331,7 +331,7 @@ final class Gimbal: ObservableObject {
 enum HotKeys {
     private static var refs: [EventHotKeyRef?] = []
     private static var handlerInstalled = false
-    private(set) static var status = "Not configured"
+    private(set) static var status = "Não configurados"
 
     static func register() {
         if !handlerInstalled {
@@ -360,7 +360,7 @@ enum HotKeys {
                 return noErr
             }, 1, &spec, nil, nil)
             guard result == noErr else {
-                status = "Unable to register global hotkey handler"
+                status = "Não foi possível registrar os atalhos globais"
                 return
             }
             handlerInstalled = true
@@ -376,14 +376,14 @@ enum HotKeys {
         refs.removeAll()
 
         guard handlerInstalled else {
-            status = "Hotkey handler unavailable"
+            status = "Atalhos globais indisponíveis"
             return status
         }
 
         let defaults = UserDefaults.standard
         let enabled = defaults.object(forKey: "hotkeysEnabled") as? Bool ?? true
         guard enabled else {
-            status = "Shortcuts disabled"
+            status = "Atalhos desativados"
             return status
         }
 
@@ -415,8 +415,8 @@ enum HotKeys {
         }
 
         status = failures == 0
-            ? "8 shortcuts active"
-            : "\(8 - failures)/8 shortcuts active — check macOS conflicts"
+            ? "8 atalhos ativos"
+            : "\(8 - failures)/8 atalhos ativos — verifique conflitos no macOS"
         return status
     }
 }
@@ -464,7 +464,7 @@ struct Pad: View {
                 }
                 .onEnded { _ in dragging = false })
         }
-        .frame(height: 150)
+        .frame(height: 112)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
@@ -489,195 +489,195 @@ struct Panel: View {
     @StateObject private var preview = Preview()
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("GimbalBar").font(.title3.weight(.semibold))
-                    Text("DJI Osmo Pocket 3")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack(spacing: 5) {
-                        Circle().fill(g.connected ? .green : .secondary).frame(width: 6, height: 6)
-                        Text(g.connected ? "Connected" : "Not connected")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Pan \(Int(g.pan.rounded()))°")
-                    Text("Tilt \(Int(g.tilt.rounded()))°")
-                }
-                .font(.system(.caption, design: .rounded).monospacedDigit())
-                .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Label("Live preview", systemImage: "video")
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                if !g.connected {
-                    Image(systemName: "video.slash")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            ZStack {
-                Rectangle().fill(.black)
-                PreviewView(session: preview.session)
-                if !preview.status.isEmpty {
-                    Text(preview.status).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 288, height: 162) // 16:9 at the panel's content width; video views have no intrinsic size
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-
-            HStack {
-                Label("Manual control", systemImage: "move")
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text("Tap or drag")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-
-            Pad(g: g).disabled(!g.connected)
-
-            HStack(spacing: 16) {
-                Grid(horizontalSpacing: 4, verticalSpacing: 4) {
-                    GridRow {
-                        Color.clear.frame(width: 34, height: 34)
-                        ArrowButton(symbol: "chevron.up") { g.nudge(dx: 0, dy: 1) }
-                        Color.clear.frame(width: 34, height: 34)
-                    }
-                    GridRow {
-                        ArrowButton(symbol: "chevron.left") { g.nudge(dx: -1, dy: 0) }
-                        ArrowButton(symbol: "scope") { g.recenter() }
-                        ArrowButton(symbol: "chevron.right") { g.nudge(dx: 1, dy: 0) }
-                    }
-                    GridRow {
-                        Color.clear.frame(width: 34, height: 34)
-                        ArrowButton(symbol: "chevron.down") { g.nudge(dx: 0, dy: -1) }
-                        Color.clear.frame(width: 34, height: 34)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Step").font(.caption).foregroundStyle(.secondary)
-                    Picker("Step", selection: $g.step) {
-                        Text("5°").tag(5.0)
-                        Text("15°").tag(15.0)
-                        Text("30°").tag(30.0)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-
-                    Button("Set as Center") { g.setHome() }
-                        .controlSize(.small)
-                    Toggle("Invert Pan", isOn: $g.invertPan)
-                        .toggleStyle(.checkbox)
-                        .controlSize(.small)
-                }
-            }
-            .disabled(!g.connected)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Label("Saved positions", systemImage: "bookmark")
-                        .font(.subheadline.weight(.medium))
-                    Spacer()
-                    if g.isTransitioning {
-                        Button("Cancel move") { g.stopTransition() }
-                            .controlSize(.small)
-                    }
-                }
-
-                ForEach(1...3, id: \.self) { slot in
-                    let saved = g.savedPosition(slot: slot)
-                    HStack(spacing: 8) {
-                        Text("P\(slot)")
-                            .font(.system(.caption, design: .rounded).weight(.semibold))
-                            .frame(width: 24, alignment: .leading)
-                        if let saved {
-                            Text("\(Int(saved.pan.rounded()))° / \(Int(saved.tilt.rounded()))°")
-                                .foregroundStyle(.secondary)
-                                .font(.caption.monospacedDigit())
-                        } else {
-                            Text("Empty").foregroundStyle(.tertiary).font(.caption)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("GimbalBar").font(.title3.weight(.semibold))
+                                Text("DJI Osmo Pocket 3")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                HStack(spacing: 5) {
+                                    Circle().fill(g.connected ? .green : .secondary).frame(width: 6, height: 6)
+                                    Text(g.connected ? "Conectada" : "Desconectada")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("Horizontal \(Int(g.pan.rounded()))°")
+                                Text("Vertical \(Int(g.tilt.rounded()))°")
+                            }
+                            .font(.system(.caption, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 4)
-                        Button("Save") { g.savePosition(slot: slot) }
-                            .disabled(!g.connected || g.isTransitioning)
-                            .controlSize(.small)
-                        Button("Go") { g.recallPosition(slot: slot) }
-                            .disabled(!g.connected || saved == nil)
-                            .controlSize(.small)
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    Text("Move style").font(.caption).foregroundStyle(.secondary)
-                    Picker("Move style", selection: $g.presetMotionStep) {
-                        Text("Gentle").tag(3.0)
-                        Text("Normal").tag(6.0)
-                        Text("Quick").tag(9.0)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                }
-                Text("Interpolated steps, not hardware motor speed")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-
             Divider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Keyboard shortcuts", systemImage: "keyboard")
-                    .font(.subheadline.weight(.medium))
-
-                Toggle("Enable global shortcuts", isOn: $g.hotkeysEnabled)
-                    .toggleStyle(.switch)
-                    .onChange(of: g.hotkeysEnabled) { _ in
-                        g.hotkeyStatus = HotKeys.configure()
-                    }
-
-                Picker("Modifiers", selection: $g.hotkeyModifiers) {
-                    Text("⌃⌥").tag(0)
-                    Text("⌘⌥").tag(1)
-                    Text("⌃⇧").tag(2)
+            HStack(alignment: .top, spacing: 18) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                                    Label("Prévia ao vivo", systemImage: "video")
+                                        .font(.subheadline.weight(.medium))
+                                    Spacer()
+                                    if !g.connected {
+                                        Image(systemName: "video.slash")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                    
+                                ZStack {
+                                    Rectangle().fill(.black)
+                                    PreviewView(session: preview.session)
+                                    if !preview.status.isEmpty {
+                                        Text(preview.status).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(width: 288, height: 162) // 16:9 at the panel's content width; video views have no intrinsic size
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+                    
+                                HStack {
+                                    Label("Controle manual", systemImage: "move")
+                                        .font(.subheadline.weight(.medium))
+                                    Spacer()
+                                    Text("Clique ou arraste")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                    
+                                Pad(g: g).disabled(!g.connected)
+                    
+                                HStack(spacing: 16) {
+                                    Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+                                        GridRow {
+                                            Color.clear.frame(width: 34, height: 34)
+                                            ArrowButton(symbol: "chevron.up") { g.nudge(dx: 0, dy: 1) }
+                                            Color.clear.frame(width: 34, height: 34)
+                                        }
+                                        GridRow {
+                                            ArrowButton(symbol: "chevron.left") { g.nudge(dx: -1, dy: 0) }
+                                            ArrowButton(symbol: "scope") { g.recenter() }
+                                            ArrowButton(symbol: "chevron.right") { g.nudge(dx: 1, dy: 0) }
+                                        }
+                                        GridRow {
+                                            Color.clear.frame(width: 34, height: 34)
+                                            ArrowButton(symbol: "chevron.down") { g.nudge(dx: 0, dy: -1) }
+                                            Color.clear.frame(width: 34, height: 34)
+                                        }
+                                    }
+                    
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text("Passo").font(.caption).foregroundStyle(.secondary)
+                                        Picker("Step", selection: $g.step) {
+                                            Text("5°").tag(5.0)
+                                            Text("15°").tag(15.0)
+                                            Text("30°").tag(30.0)
+                                        }
+                                        .pickerStyle(.segmented)
+                                        .labelsHidden()
+                    
+                                        Button("Definir centro") { g.setHome() }
+                                            .controlSize(.small)
+                                        Toggle("Inverter horizontal", isOn: $g.invertPan)
+                                            .toggleStyle(.checkbox)
+                                            .controlSize(.small)
+                                    }
+                                }
+                                .disabled(!g.connected)
                 }
-                .pickerStyle(.segmented)
-                .disabled(!g.hotkeysEnabled)
-                .onChange(of: g.hotkeyModifiers) { _ in
-                    g.hotkeyStatus = HotKeys.configure()
+                .frame(width: 302)
+                Divider()
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 9) {
+                                    HStack {
+                                        Label("Posições salvas", systemImage: "bookmark")
+                                            .font(.subheadline.weight(.medium))
+                                        Spacer()
+                                        if g.isTransitioning {
+                                            Button("Interromper") { g.stopTransition() }
+                                                .controlSize(.small)
+                                        }
+                                    }
+                    
+                                    ForEach(1...3, id: \.self) { slot in
+                                        let saved = g.savedPosition(slot: slot)
+                                        HStack(spacing: 8) {
+                                            Text("P\(slot)")
+                                                .font(.system(.caption, design: .rounded).weight(.semibold))
+                                                .frame(width: 24, alignment: .leading)
+                                            if let saved {
+                                                Text("\(Int(saved.pan.rounded()))° / \(Int(saved.tilt.rounded()))°")
+                                                    .foregroundStyle(.secondary)
+                                                    .font(.caption.monospacedDigit())
+                                            } else {
+                                                Text("Vazio").foregroundStyle(.tertiary).font(.caption)
+                                            }
+                                            Spacer(minLength: 4)
+                                            Button("Salvar") { g.savePosition(slot: slot) }
+                                                .disabled(!g.connected || g.isTransitioning)
+                                                .controlSize(.small)
+                                            Button("Ir") { g.recallPosition(slot: slot) }
+                                                .disabled(!g.connected || saved == nil)
+                                                .controlSize(.small)
+                                        }
+                                    }
+                    
+                                    HStack(spacing: 8) {
+                                        Text("Movimentação").font(.caption).foregroundStyle(.secondary)
+                                        Picker("Move style", selection: $g.presetMotionStep) {
+                                            Text("Suave").tag(3.0)
+                                            Text("Normal").tag(6.0)
+                                            Text("Rápida").tag(9.0)
+                                        }
+                                        .pickerStyle(.segmented)
+                                        .labelsHidden()
+                                    }
+                                    Text("Passos por software; não muda a velocidade dos motores")
+                                        .font(.caption2).foregroundStyle(.tertiary)
+                                }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 10) {
+                                    Label("Atalhos de teclado", systemImage: "keyboard")
+                                        .font(.subheadline.weight(.medium))
+                    
+                                    Toggle("Ativar atalhos globais", isOn: $g.hotkeysEnabled)
+                                        .toggleStyle(.switch)
+                                        .onChange(of: g.hotkeysEnabled) { _ in
+                                            g.hotkeyStatus = HotKeys.configure()
+                                        }
+                    
+                                    Picker("Combinação", selection: $g.hotkeyModifiers) {
+                                        Text("⌃⌥").tag(0)
+                                        Text("⌘⌥").tag(1)
+                                        Text("⌃⇧").tag(2)
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .disabled(!g.hotkeysEnabled)
+                                    .onChange(of: g.hotkeyModifiers) { _ in
+                                        g.hotkeyStatus = HotKeys.configure()
+                                    }
+                    
+                                    Text("\(g.shortcutPrefix) + setas: mover · C: centro · 1–3: posições")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text(g.hotkeyStatus)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                    Spacer(minLength: 0)
                 }
-
-                Text("\(g.shortcutPrefix) + arrows: move · C: center · 1–3: presets")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text(g.hotkeyStatus)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                .frame(width: 304, alignment: .leading)
             }
-
+            .frame(maxHeight: .infinity, alignment: .top)
             Divider()
-
             HStack {
-                Text("Version 1.1 · Development build")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+                            Text("Versão 1.1 · Em desenvolvimento")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                            Spacer()
+                            Button("Sair") { NSApp.terminate(nil) }
+                                .buttonStyle(.plain)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
         }
         .padding(16)
-        }
-        // MenuBarExtra(.window) needs an explicit viewport height for ScrollView.
-        // A maxHeight-only constraint can collapse the popover to a scroll indicator.
-        .frame(width: 336, height: 600)
+        .frame(width: 690, height: 620)
         .onAppear {
             preview.start()
             g.hotkeyStatus = HotKeys.status
@@ -691,13 +691,12 @@ struct Panel: View {
         .onKeyPress(.downArrow) { g.nudge(dx: 0, dy: -1); return .handled }
     }
 }
-
 @main
 struct GimbalBarApp: App {
     init() { HotKeys.register() }
 
     var body: some Scene {
-        MenuBarExtra("Gimbal", systemImage: "camera.viewfinder") {
+        MenuBarExtra("Controle de câmera", systemImage: "camera.viewfinder") {
             Panel()
         }
         .menuBarExtraStyle(.window)
