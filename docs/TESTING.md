@@ -37,6 +37,35 @@ If the development branch is already on disk, switch with `git switch feat/v1.1-
 
 For physical safety, use **Gentle** first, keep the gimbal clear of obstacles, and avoid unattended operation. The device's physical motion may lag software commands. Stop testing if it behaves unpredictably.
 
+## GimbalBar 1.1 — UI and configurable shortcuts
+
+The interface and shortcut preferences are developed on branch `feat/v1.1-ui-shortcut-profiles`, based on the unmerged 1.1 presets branch. This is a **stacked change**, not yet part of `main`.
+
+To test this branch after the presets build:
+
+```bash
+cd ~/Projects/gimbalbar
+git fetch origin
+git switch --track origin/feat/v1.1-ui-shortcut-profiles
+./build.sh && open ./GimbalBar.app
+```
+
+Quit **all other running copies** of GimbalBar first, including `/Applications/GimbalBar.app`, so global hotkey registration cannot conflict with a second instance.
+
+Shortcut test matrix:
+
+1. **Visual:** The menu panel should scroll on smaller screens. Check the camera preview, pan/tilt values, control pad, saved P1–P3, keyboard section, and Quit.
+2. **Default:** With global shortcuts enabled, `Control+Option+arrows` should move; `Control+Option+C` should center; `Control+Option+1/2/3` should recall saved presets.
+3. **Change modifier:** Select `Command+Option` and verify its arrows/C/1–3. Confirm the old modifier no longer operates the camera.
+4. **Third profile:** Select `Control+Shift` and retest one arrow and one saved preset.
+5. **Disable:** Turn off global shortcuts. The counter should show disabled, and global shortcuts must no longer move the camera.
+6. **Re-enable:** Turn global shortcuts on and confirm immediate re-registration without restarting.
+7. **Conflict handling:** If macOS or another application reserves a shortcut, the app reports the number of successfully registered shortcuts. Change profile; do not disable macOS security or Accessibility protection.
+8. **Persistence:** Quit and relaunch. Enabled state and selected modifier profile must persist.
+9. **Regression:** Saved positions, cancel motion, USB disconnect/reconnect, step size, invert pan and live preview should still function.
+
+**Risk:** Shortcut registration is attempted for 8 keys per modifier profile and may partially fail when the OS or another app owns a combination. A failed registration does not grant permission to override the OS shortcut.
+
 ## SwiftUI build troubleshooting
 
 Earlier MacBook tests reported `SwiftUIMacros.StateMacro` missing from the Command Line Tools toolchain. The code already uses `@StoredState` as an alias for `SwiftUI.State`, avoiding direct macro expansion for the drag property. If compilation fails again, capture:
