@@ -137,6 +137,17 @@ final class Gimbal: ObservableObject {
     @AppStorage("homeTilt") var homeTilt = 0.0
     // Degrees per 200 ms software step. This is not a hardware motor-speed setting.
     @AppStorage("presetMotionStep") var presetMotionStep = 6.0
+    @AppStorage("hotkeysEnabled") var hotkeysEnabled = true
+    @AppStorage("hotkeyModifiers") var hotkeyModifiers = 0
+    @Published var hotkeyStatus = ""
+
+    var shortcutPrefix: String {
+        switch hotkeyModifiers {
+        case 1: return "⌘⌥"
+        case 2: return "⌃⇧"
+        default: return "⌃⌥"
+        }
+    }
 
     private let usb = DispatchQueue(label: "gimbal.usb")
     private var pending: (Double, Double)?
@@ -254,6 +265,8 @@ final class Gimbal: ObservableObject {
             cancelTransition()
             return
         }
+        // Wait for the prior USB write to finish before issuing the next motor target.
+        guard !sending else { return }
         let dx = target.pan - pan
         let dy = target.tilt - tilt
         let remaining = hypot(dx, dy)
@@ -313,39 +326,98 @@ final class Gimbal: ObservableObject {
     }
 }
 
-// MARK: - Global hotkeys (⌃⌥ + arrows, ⌃⌥C)
+// MARK: - Global shortcuts
 
 enum HotKeys {
     private static var refs: [EventHotKeyRef?] = []
+    private static var handlerInstalled = false
+    private(set) static var status = "Not configured"
 
     static func register() {
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
-            var id = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                              nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
-            Task { @MainActor in
-                let g = Gimbal.shared
-                switch id.id {
-                case 1: g.nudge(dx: -1, dy: 0)
-                case 2: g.nudge(dx: 1, dy: 0)
-                case 3: g.nudge(dx: 0, dy: 1)
-                case 4: g.nudge(dx: 0, dy: -1)
-                case 5: g.recenter()
-                default: break
+        if !handlerInstalled {
+            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            let result = InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+                var id = EventHotKeyID()
+                let result = GetEventParameter(
+                    event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                    nil, MemoryLayout<EventHotKeyID>.size, nil, &id
+                )
+                guard result == noErr else { return noErr }
+                Task { @MainActor in
+                    let g = Gimbal.shared
+                    switch id.id {
+                    case 1: g.nudge(dx: -1, dy: 0)
+                    case 2: g.nudge(dx: 1, dy: 0)
+                    case 3: g.nudge(dx: 0, dy: 1)
+                    case 4: g.nudge(dx: 0, dy: -1)
+                    case 5: g.recenter()
+                    case 6: g.recallPosition(slot: 1)
+                    case 7: g.recallPosition(slot: 2)
+                    case 8: g.recallPosition(slot: 3)
+                    default: break
+                    }
                 }
+                return noErr
+            }, 1, &spec, nil, nil)
+            guard result == noErr else {
+                status = "Unable to register global hotkey handler"
+                return
             }
-            return noErr
-        }, 1, &spec, nil, nil)
-
-        let mods = UInt32(controlKey | optionKey)
-        let keys = [kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_ANSI_C]
-        for (i, key) in keys.enumerated() {
-            var ref: EventHotKeyRef?
-            RegisterEventHotKey(UInt32(key), mods, EventHotKeyID(signature: OSType(0x47424152), id: UInt32(i + 1)),
-                                GetApplicationEventTarget(), 0, &ref)
-            refs.append(ref)
+            handlerInstalled = true
         }
+        _ = configure()
+    }
+
+    @discardableResult
+    static func configure() -> String {
+        for ref in refs {
+            if let ref { UnregisterEventHotKey(ref) }
+        }
+        refs.removeAll()
+
+        guard handlerInstalled else {
+            status = "Hotkey handler unavailable"
+            return status
+        }
+
+        let defaults = UserDefaults.standard
+        let enabled = defaults.object(forKey: "hotkeysEnabled") as? Bool ?? true
+        guard enabled else {
+            status = "Shortcuts disabled"
+            return status
+        }
+
+        let modifier: UInt32
+        switch defaults.integer(forKey: "hotkeyModifiers") {
+        case 1: modifier = UInt32(cmdKey | optionKey)
+        case 2: modifier = UInt32(controlKey | shiftKey)
+        default: modifier = UInt32(controlKey | optionKey)
+        }
+
+        let keys = [
+            kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
+            kVK_ANSI_C, kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3
+        ]
+
+        var failures = 0
+        for (index, key) in keys.enumerated() {
+            var ref: EventHotKeyRef?
+            let result = RegisterEventHotKey(
+                UInt32(key), modifier,
+                EventHotKeyID(signature: OSType(0x47424152), id: UInt32(index + 1)),
+                GetApplicationEventTarget(), 0, &ref
+            )
+            if result == noErr {
+                refs.append(ref)
+            } else {
+                failures += 1
+            }
+        }
+
+        status = failures == 0
+            ? "8 shortcuts active"
+            : "\(8 - failures)/8 shortcuts active — check macOS conflicts"
+        return status
     }
 }
 
