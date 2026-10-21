@@ -526,7 +526,11 @@ struct Panel: View {
                                     Rectangle().fill(.black)
                                     PreviewView(session: preview.session)
                                     if !preview.status.isEmpty {
-                                        Text(preview.status).font(.caption).foregroundStyle(.secondary)
+                                        Text(preview.status)
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.center)
+                                    .padding(10)
                                     }
                                 }
                                 .frame(width: 288, height: 162) // 16:9 at the panel's content width; video views have no intrinsic size
@@ -564,7 +568,7 @@ struct Panel: View {
                     
                                     VStack(alignment: .leading, spacing: 10) {
                                         Text("Passo").font(.caption).foregroundStyle(.secondary)
-                                        Picker("Step", selection: $g.step) {
+                                        Picker("Passo", selection: $g.step) {
                                             Text("5°").tag(5.0)
                                             Text("15°").tag(15.0)
                                             Text("30°").tag(30.0)
@@ -620,7 +624,7 @@ struct Panel: View {
                     
                                     HStack(spacing: 8) {
                                         Text("Movimentação").font(.caption).foregroundStyle(.secondary)
-                                        Picker("Move style", selection: $g.presetMotionStep) {
+                                        Picker("Movimentação", selection: $g.presetMotionStep) {
                                             Text("Suave").tag(3.0)
                                             Text("Normal").tag(6.0)
                                             Text("Rápida").tag(9.0)
