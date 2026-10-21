@@ -23,6 +23,22 @@ If that branch already exists locally, use `git switch feat/usb-preview-reliabil
 
 Build locally; do not run GitHub Actions merely to validate this iteration. The build script replaces `build/` and `GimbalBar.app/` **inside the repository**, but does not install anything into `/Applications`.
 
+## Swift 6.4 / Command Line Tools troubleshooting
+
+If the compiler reports `external macro implementation type 'SwiftUIMacros.StateMacro' could not be found`, the issue can arise from the Command Line Tools compiler lacking the `SwiftUIMacros` plugin. The source uses `@StoredState` (an alias for the `SwiftUI.State` property wrapper) instead of direct `@State` to avoid the macro dependency.
+
+To inspect your environment:
+
+```bash
+xcode-select -p
+xcrun --find swiftc
+swiftc --version
+```
+
+After fetching this branch, run `./build.sh` again. A successful build ends with `Built .../GimbalBar.app`. Only run `open ./GimbalBar.app` after that message. Do not interpret the creation of an incomplete `.app` directory as a successful compilation.
+
+Reference: https://github.com/drumih/turbo-fieldfare/issues/185 and https://github.com/drumih/turbo-fieldfare/pull/186
+
 ## Manual smoke tests
 
 1. **Without camera:** Open GimbalBar. The menu panel should report "Not connected" / "Pocket 3 not found". Buttons must not queue physical movements.
