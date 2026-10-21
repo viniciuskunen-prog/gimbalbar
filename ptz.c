@@ -127,3 +127,14 @@ int ptz_zoom_set(int zoom) {
   };
   return zoom_request(0x21, SET_CUR, bytes);
 }
+
+int ptz_zoom_set_checked(int zoom, int minimum, int maximum) {
+  // This experimental driver accepts only the verified Pocket 3 zoom scale.
+  // The caller has queried GET_MIN / GET_MAX after connecting.
+  if (minimum < 100 || maximum > 400 || minimum >= maximum ||
+      zoom < minimum || zoom > maximum) return -3;
+  uint8_t bytes[2] = {
+    (uint8_t)(zoom & 0xff), (uint8_t)((zoom >> 8) & 0xff)
+  };
+  return zoom_request(0x21, SET_CUR, bytes);
+}
